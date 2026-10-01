@@ -5,11 +5,34 @@ const CONFIG = {
   owner: "OpenNotesProject",
   repo: "Notes",
   branch: "main",
-  rootPath: "", // e.g. "notes"
-  // OPTIONAL: for private repos or higher rate limits you can add a personal access token here for local testing.
-  // WARNING: embedding tokens in client-side code is insecure. Prefer a server-side proxy in production.
+  rootPath: "",
   token: ''
 };
+
+/* -------------------------
+   THEME MANAGEMENT
+   ------------------------- */
+const THEME_KEY = 'opennotes_theme';
+function getCurrentTheme(){
+  const saved = localStorage.getItem(THEME_KEY);
+  if(saved) return saved;
+  if(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) return 'dark';
+  return 'light';
+}
+function setTheme(theme){
+  document.documentElement.setAttribute('data-theme', theme);
+  localStorage.setItem(THEME_KEY, theme);
+  updateThemeButtons(theme);
+}
+function updateThemeButtons(theme){
+  const lightBtn = document.getElementById('themeLight');
+  const darkBtn = document.getElementById('themeDark');
+  const kindleBtn = document.getElementById('themeKindle');
+
+  if(lightBtn) lightBtn.style.opacity = theme === 'light' ? '1' : '0.5';
+  if(darkBtn) darkBtn.style.opacity = theme === 'dark' ? '1' : '0.5';
+  if(kindleBtn) kindleBtn.style.opacity = theme === 'kindle' ? '1' : '0.5';
+}
 
 /* -------------------------
    STATE & ELEMENTS
@@ -71,9 +94,6 @@ function ghRawUrl(path){
   return `https://raw.githubusercontent.com/${CONFIG.owner}/${CONFIG.repo}/${CONFIG.branch}/${full}`;
 }
 
-/* -------------------------
-   GitHub fetch helper (adds optional token and surfaces API error messages)
-   ------------------------- */
 async function ghFetch(url, opts = {}){
   const headers = Object.assign({}, opts.headers || {});
   if(CONFIG.token) headers['Authorization'] = `token ${CONFIG.token}`;
@@ -89,9 +109,6 @@ async function ghFetch(url, opts = {}){
   return res;
 }
 
-/* -------------------------
-   Fetch tree recursively
-   ------------------------- */
 async function fetchTree(path=''){
   const url = ghContentsUrl(path);
   const res = await ghFetch(url);
@@ -108,10 +125,6 @@ async function fetchTree(path=''){
   return { folders, files };
 }
 
-/* -------------------------
-   Render branch (recursive)
-   supports unlimited depth, smooth expand/collapse
-   ------------------------- */
 function renderBranch(node, container, depth = 0, basePath = ''){
   const folderNames = Object.keys(node.folders).sort();
   folderNames.forEach(folder => {
@@ -130,7 +143,7 @@ function renderBranch(node, container, depth = 0, basePath = ''){
     folderWrap.appendChild(children);
 
     title.addEventListener('click', () => {
-      const open = children.classList.toggle('open');
+      children.classList.toggle('open');
       collapseSiblings(children, folderWrap.parentElement);
     });
 
@@ -149,7 +162,6 @@ function renderBranch(node, container, depth = 0, basePath = ''){
   });
 }
 
-/* collapse siblings helper */
 function collapseSiblings(currentChildren, parent){
   if(!parent) return;
   parent.querySelectorAll('.branch-children').forEach(ch => {
@@ -157,9 +169,6 @@ function collapseSiblings(currentChildren, parent){
   });
 }
 
-/* -------------------------
-   Render subjects (top-level)
-   ------------------------- */
 function renderSubjects(tree){
   subjectsDropdown.innerHTML = `<div class="subject-header">Subjects</div>`;
   const topFolders = Object.keys(tree.folders).sort();
@@ -176,7 +185,7 @@ function renderSubjects(tree){
     branch.appendChild(children);
 
     title.addEventListener('click', () => {
-      const open = children.classList.toggle('open');
+      children.classList.toggle('open');
       collapseSiblings(children, subjectsDropdown);
     });
 
@@ -187,12 +196,7 @@ function renderSubjects(tree){
   });
 }
 
-/* -------------------------
-   Process callouts (Obsidian-style > [!TYPE])
-   Converts blockquotes or any block-level element starting with [!TYPE] into styled callout divs
-   ------------------------- */
 function processCallouts(container){
-  // Icons for common types (unknown types use a default)
   const icons = {
     note: '📝', warning: '⚠️', danger: '🚨', error: '❌', tip: '💡', hint: '💡',
     example: '📋', quote: '💬', info: 'ℹ️', abstract: '📋', summary: '📋',
@@ -209,7 +213,6 @@ function processCallouts(container){
 
   function removeMarkerFromNode(node){
     if(!node) return false;
-    // Text node
     if(node.nodeType === Node.TEXT_NODE){
       const txt = node.nodeValue || '';
       if(/^\s*\[!.+?\]\s*/i.test(txt)){
@@ -218,12 +221,10 @@ function processCallouts(container){
       }
       return false;
     }
-    // Element node: check children in order
     if(node.nodeType === Node.ELEMENT_NODE){
       const children = Array.from(node.childNodes);
       for(const child of children){
         if(removeMarkerFromNode(child)){
-          // remove empty elements left behind
           if(child.nodeType === Node.ELEMENT_NODE && !child.textContent.trim()) child.remove();
           return true;
         }
@@ -232,7 +233,6 @@ function processCallouts(container){
     return false;
   }
 
-  // Helper to build callout and replace an element
   function makeCalloutFor(el, typeRaw){
     const type = sanitizeType(typeRaw);
     const calloutDiv = document.createElement('div');
@@ -242,7 +242,6 @@ function processCallouts(container){
     titleDiv.className = 'callout-title';
     titleDiv.innerHTML = `<span class="callout-icon">${icons[type] || '📌'}</span><span>${displayTitle(typeRaw)}</span>`;
 
-    // Remove marker from the element/content
     removeMarkerFromNode(el);
 
     const contentDiv = document.createElement('div');
@@ -255,7 +254,6 @@ function processCallouts(container){
     el.parentNode.replaceChild(calloutDiv, el);
   }
 
-  // 1) Process blockquotes (standard markdown '>' -> <blockquote>)
   const blockquotes = Array.from(container.querySelectorAll('blockquote'));
   blockquotes.forEach(bq => {
     const bqText = bq.textContent || '';
@@ -264,11 +262,10 @@ function processCallouts(container){
     makeCalloutFor(bq, match[1]);
   });
 
-  // 2) Also process other block-level elements that may contain the marker (robustness)
   const blockTags = ['p','div','li','pre','section','article','figure','aside','header','footer'];
   const candidates = Array.from(container.querySelectorAll(blockTags.join(',')));
   candidates.forEach(el => {
-    if(el.closest('blockquote')) return; // already handled
+    if(el.closest('blockquote')) return;
     const txt = el.textContent || '';
     const match = txt.match(/^\s*\[!(.+?)\]/i);
     if(!match) return;
@@ -276,9 +273,6 @@ function processCallouts(container){
   });
 }
 
-/* -------------------------
-   Load note, update UI, breadcrumbs, recent
-   ------------------------- */
 async function loadNote(path){
   try{
     statusEl.textContent = 'Loading…';
@@ -294,10 +288,8 @@ async function loadNote(path){
     currentPathEl.textContent = path;
     noteContentEl.innerHTML = marked.parse(text);
 
-    // Process callouts (Obsidian-style > [!TYPE])
     processCallouts(noteContentEl);
 
-    // Render LaTeX (KaTeX auto-render) if available. Delimiters: $$...$$ (display) and $...$ (inline)
     try{
       if(window.renderMathInElement){
         renderMathInElement(noteContentEl, {
@@ -316,7 +308,6 @@ async function loadNote(path){
     updateBreadcrumbs(path);
     addRecent(path);
 
-    // render mermaid diagrams inside the rendered markdown
     await renderAllMermaid();
 
     statusEl.textContent = 'Loaded';
@@ -326,16 +317,7 @@ async function loadNote(path){
   }
 }
 
-
-/* -------------------------
-   Mermaid rendering
-   - finds <pre><code class="language-mermaid">...</code></pre>
-   - replaces with rendered SVG using mermaid.mermaidAPI.render
-   ------------------------- */
 let mermaidIdCounter = 0;
-/* -------------------------
-   Mermaid rendering (modern API)
-   ------------------------- */
 async function renderAllMermaid() {
   if (!window.mermaid) return;
 
@@ -370,10 +352,6 @@ async function renderAllMermaid() {
   }
 }
 
-
-/* -------------------------
-   Breadcrumbs
-   ------------------------- */
 function updateBreadcrumbs(path){
   if(!path){
     breadcrumbsEl.style.display = 'none';
@@ -404,11 +382,10 @@ function updateBreadcrumbs(path){
   });
 }
 
-/* Expand sidebar nodes matching a path (open branches along path) */
 function expandPath(path){
   const segments = path.split('/');
   let current = '';
-  segments.forEach((seg, idx) => {
+  segments.forEach((seg) => {
     current = current ? `${current}/${seg}` : seg;
     const branch = document.querySelector(`.branch[data-path="${current}"]`);
     if(branch){
@@ -425,9 +402,6 @@ function expandPath(path){
   });
 }
 
-/* -------------------------
-   Recent notes (localStorage)
-   ------------------------- */
 const RECENT_KEY = 'opennotes_recent';
 function getRecent(){
   try{ const raw = localStorage.getItem(RECENT_KEY); return raw ? JSON.parse(raw) : []; }catch{ return []; }
@@ -457,9 +431,6 @@ function renderRecent(){
   });
 }
 
-/* -------------------------
-   Build search index (loads all notes once)
-   ------------------------- */
 async function buildIndex(node){
   for(const file of node.files){
     try{
@@ -476,9 +447,6 @@ async function buildIndex(node){
   }
 }
 
-/* -------------------------
-   Search UI
-   ------------------------- */
 function runSearch(q){
   q = q.toLowerCase().trim();
   if(!q){ searchResultsEl.style.display = 'none'; searchResultsEl.innerHTML = ''; return; }
@@ -498,9 +466,6 @@ function runSearch(q){
   searchResultsEl.style.display = 'block';
 }
 
-/* -------------------------
-   Keyboard shortcuts & events
-   ------------------------- */
 document.addEventListener('keydown', e => {
   if((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k'){ e.preventDefault(); searchInput.focus(); }
   if(e.key.toLowerCase() === 'n' && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA'){ e.preventDefault(); createNotePlaceholder(); }
@@ -508,9 +473,6 @@ document.addEventListener('keydown', e => {
 searchInput.addEventListener('input', e => runSearch(e.target.value));
 searchInput.addEventListener('blur', () => setTimeout(()=>{ searchResultsEl.style.display='none'; }, 150));
 
-/* -------------------------
-   Share button
-   ------------------------- */
 shareBtn.addEventListener('click', () => {
   if(!state.currentNote) return;
   const url = window.location.href;
@@ -521,18 +483,18 @@ shareBtn.addEventListener('click', () => {
   });
 });
 
-/* -------------------------
-   Placeholder create note (hook)
-   ------------------------- */
+document.getElementById('themeLight').addEventListener('click', () => setTheme('light'));
+document.getElementById('themeDark').addEventListener('click', () => setTheme('dark'));
+document.getElementById('themeKindle').addEventListener('click', () => setTheme('kindle'));
+
 function createNotePlaceholder(){
   alert('Create note flow — integrate your editor here.');
 }
 
-/* -------------------------
-   Init: fetch tree, render, index, load URL note or show recent
-   ------------------------- */
 (async function init(){
   try{
+    setTheme(getCurrentTheme());
+
     statusEl.textContent = 'Fetching vault…';
     const tree = await fetchTree('');
     state.tree = tree;
